@@ -2,6 +2,7 @@
 import os, operator
 from optparse import OptionParser
 from PIL import Image
+from array import array
 
 parser = OptionParser()
 parser.add_option("-p", "--path", dest="paths", action="append", help="paths to search for pictures", metavar="FILE")
@@ -85,9 +86,10 @@ filenames = sorted(filestat.iteritems(), sort_filenames, key = operator.itemgett
 
 # pack the largest file into the bucket with the least amount of space
 print "packing %d files into %d buckets" % ( len(filenames), options.buckets)
+filenames2 = filenames[:]
 while True:
    try:
-      filename, sz = filenames.pop()
+      filename, sz = filenames2.pop()
    except IndexError:
       break
    idx = bc.min()
@@ -97,7 +99,7 @@ while True:
 print
 print "---- PACKED ----"
 for n, sz in enumerate(bc.sizes):
-   print "bucket[%d] is %s (%s bytes, %d files)" % ( n, formatSize(sz), sz, len(bc.filenames[n]) )
+   print "bucket[%d] is (%s volume, %d files)" % ( n, sz, len(bc.filenames[n]) )
 
 if options.verbose:
    print
@@ -114,4 +116,56 @@ for n, files in enumerate(bc.filenames):
       fh.write(f + "\n")
    fh.close()
 
+import binpack
+from binpack import CygonRectanglePacker
+
+x, y = map(int, options.dimension.split("x"))
+crp = CygonRectanglePacker(x, y)
+bins = []
+bins.append(crp)
+
+print "Packing images into %d x %d box" % ( x, y)
+destim = Image.new('RGB', (x, y))
+points = []
+pointscol = []
+while True:
+   try:
+      filename, sz = filenames.pop()
+   except IndexError:
+      break
+
+   # SANITY: make sure image width or height is not larger than the destination
+   if sz[0] > x:
+      print ("WARNING: image %s width %s is larger than %s" % ( filename, sz, (x,y)))
+      continue
+   if sz[1] > y:
+      print ("WARNING: image %s height %s is larger than %s" % ( filename, sz, (x,y)))
+      continue
+
+   print filename, sz, "sortval", sz[0] * sz[1]
+
+   while True:
+      try:
+         print "Packing object", sz
+         point = crp.Pack(sz[0], sz[1])
+         points.append((filename, point))
+      except binpack.OutOfSpaceError, e:
+         crp = CygonRectanglePacker(x, y)
+         print "Creating new bin", (x, y)
+         bins.append(crp)
+         pointscol.append(points)
+         continue
+      break
+
+pointscol.append(points)
+
+print len(pointscol), "point collections"
+for n, points in enumerate(pointscol):
+   # save points structure into destination image
+   fname = os.path.join(options.output, "image%02d.jpg" % (n))
+   print "Saving", fname
+   destim = Image.new('RGB', (x, y))
+   for filename, point in points:
+      destim.paste(Image.open(filename), (point.x, point.y))
+   destim.save(fname)
 
