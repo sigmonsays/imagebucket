@@ -1,0 +1,7 @@
+
+organize a set of pictures and pack them efficiently into multiple image images of fixed sizes
+
+alias t='python imagebucket -p /data/junk/imagekrap/ -b 2 -d 640x480 '
+
+
+apt-get install python-imaging

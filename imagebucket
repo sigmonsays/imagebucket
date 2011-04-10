@@ -1,0 +1,117 @@
+#!/usr/bin/env python
+import os, operator
+from optparse import OptionParser
+from PIL import Image
+
+parser = OptionParser()
+parser.add_option("-p", "--path", dest="paths", action="append", help="paths to search for pictures", metavar="FILE")
+parser.add_option("-d", "--dimension", dest="dimension", default="640x480", help="specify destination image size [%default]")
+parser.add_option("-v", "--verbose", dest="verbose", action="store_true", default=False)
+parser.add_option("-b", "--buckets", dest="buckets", type="int", default=1, help="destination bucket count")
+#parser.add_option("-e", "--ext", dest="ext", action="append", help="Additional extensions to try loading [%default]")
+parser.add_option("-o", "--output", dest="output", default="output", help="specify output directory [%default]")
+(options, args) = parser.parse_args()
+
+FORMATS = [ 'jpg', 'jpeg', 'png', 'gif', 'bmp' ]
+
+def filelist(paths):
+   for path in paths:
+      for dirpath, dirnames, filenames in os.walk(path):
+         for filename in filenames:
+            yield os.path.join(dirpath, filename)
+
+def formatSize(bytes):
+   units = [ 'b', 'kb', 'mb', 'gb', 'tb', 'pb', 'xb' ]
+   x = 0
+   while True:
+      if 1024 ** x > bytes:
+         break
+      x = x + 1
+   x = x - 1
+   return "%.2f%s" % (bytes / float(1024 ** x), units[x])
+
+class BucketCollection(object):
+
+   def __init__(self, nbuckets = 3):
+      self.nbuckets = nbuckets
+      self.sizes = [0] * nbuckets
+      self.filenames = []
+      for n in xrange(nbuckets):
+         self.filenames.append([])
+
+   def __len__(self):
+      return self.nbuckets
+
+   def min(self):
+      """ return index of smallest bucket """
+      bv = min(self.sizes)
+      idx =  self.sizes.index(bv)
+      return idx
+
+   def add(self, idx, sz, filename):
+      self.sizes[idx] += sz[0] * sz[1]
+      self.filenames[idx].append(filename)
+
+bc = BucketCollection(options.buckets)
+
+filestat = {}
+for filename in filelist(options.paths):
+   try:
+      st = os.stat(filename)
+   except OSError, e:
+      print e
+      continue
+
+   # is the image a supported format?
+   im = None
+   b, ext = os.path.splitext(os.path.basename(filename))
+   if len(ext) and ext[1:] in FORMATS:
+      im = Image.open(filename)
+
+      filestat[filename] = im.size
+
+def sort_filenames(a, b):
+   a1 = a[0] * a[1]
+   b1 = b[0] * b[1]
+   if a1 == b1:
+      return 0
+   v = a1 - b1
+   if v > 0:
+      return 1
+   else:
+      return -1
+   
+filenames = sorted(filestat.iteritems(), sort_filenames, key = operator.itemgetter(1))
+
+# pack the largest file into the bucket with the least amount of space
+print "packing %d files into %d buckets" % ( len(filenames), options.buckets)
+while True:
+   try:
+      filename, sz = filenames.pop()
+   except IndexError:
+      break
+   idx = bc.min()
+   bc.add(idx, sz, filename)
+
+
+print
+print "---- PACKED ----"
+for n, sz in enumerate(bc.sizes):
+   print "bucket[%d] is %s (%s bytes, %d files)" % ( n, formatSize(sz), sz, len(bc.filenames[n]) )
+
+if options.verbose:
+   print
+   for n, files in enumerate(bc.filenames):
+      print "bucket[%d]" % ( n ), files
+
+if not os.path.exists(options.output):
+   os.makedirs(options.output)
+
+for n, files in enumerate(bc.filenames):
+   fname = os.path.join(options.output, "bucket%02d.lst" % ( n ))
+   fh = open(fname, "w+")
+   for f in files:
+      fh.write(f + "\n")
+   fh.close()
+
+
