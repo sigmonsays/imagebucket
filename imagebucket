@@ -128,6 +128,7 @@ print "Packing images into %d x %d box" % ( x, y)
 destim = Image.new('RGB', (x, y))
 points = []
 pointscol = []
+pointscol.append(points)
 while True:
    try:
       filename, sz = filenames.pop()
@@ -135,10 +136,10 @@ while True:
       break
 
    # SANITY: make sure image width or height is not larger than the destination
-   if sz[0] > x:
+   if sz[0] >= x:
       print ("WARNING: image %s width %s is larger than %s" % ( filename, sz, (x,y)))
       continue
-   if sz[1] > y:
+   if sz[1] >= y:
       print ("WARNING: image %s height %s is larger than %s" % ( filename, sz, (x,y)))
       continue
 
@@ -150,14 +151,13 @@ while True:
          point = crp.Pack(sz[0], sz[1])
          points.append((filename, point))
       except binpack.OutOfSpaceError, e:
+         print "ERROR:", sz, e
          crp = CygonRectanglePacker(x, y)
          print "Creating new bin", (x, y)
-         bins.append(crp)
+         points = []
          pointscol.append(points)
          continue
       break
-
-pointscol.append(points)
 
 print len(pointscol), "point collections"
 for n, points in enumerate(pointscol):
